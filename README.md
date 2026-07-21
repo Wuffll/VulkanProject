@@ -18,6 +18,7 @@ Requirements:
   - CMake 4.4.0 or higher (Assimp library requires 4.4.0 or higher)
   - Vulkan
   - C/C++ compiler setup (clang and gcc worked for me on Arch Linux)
+  - minimum C++ version: C++11
 
 To build this project, it is recommended to create a separate build directory and create a build there via CMake.
 You can do that with the following commands:
