@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.14...4.4)
 
-add_subdirectory(DummyLibrary)
-add_subdirectory(Logger)
+set(INTERNAL_LIBRARIES Logger StringUtils)
+
+foreach(LIBRARY IN LISTS INTERNAL_LIBRARIES)
+   add_subdirectory(${LIBRARY})
+endforeach()
 
 set(MAIN_DIR ${CMAKE_SOURCE_DIR}/src/Main)
 
@@ -16,7 +19,7 @@ add_executable(${PROJECT_EXEC_NAME}
         ${MAIN_DIR}/main.cpp
 )
 
-set(LIBRARIES DummyLibrary Logger assimp vulkan)
+set(LIBRARIES ${INTERNAL_LIBRARIES} assimp vulkan)
 
 target_link_libraries(${PROJECT_EXEC_NAME} PRIVATE ${LIBRARIES})
 target_include_directories(${PROJECT_EXEC_NAME} PRIVATE ${EXTERNAL_INCLUDES})
