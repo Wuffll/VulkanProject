@@ -10,17 +10,17 @@ INDEX_FILE = Path(__file__).parent.resolve() / "module_index.json"
 VISIBILITY_KEYWORDS = {"PUBLIC", "PRIVATE", "INTERFACE"}
 
 
-_HELP_TEXT = """script.py — VulkanApp module scaffolding tool
+_HELP_TEXT = """file-util.py — VulkanApp module scaffolding tool
 
 Usage:
-  python script.py <command> [options]
+  python file-util.py <command> [options]
 
 Commands:
   create  <Folder/ClassName> [--namespace NAME]
           Create <ClassName>.h under include/<Folder>/... and <ClassName>.cpp
           under src/<Folder>/. Generates module CMakeLists.txt for new
           modules. Does NOT auto-register in src/CMakeLists.txt — run
-          `python script.py link <Folder>` to do that. Default namespace is
+          `python file-util.py link <Folder>` to do that. Default namespace is
           vp; --namespace nests inside vp (e.g. vp::Class).
 
   link    <module> | <base_module> <new_module>
@@ -42,7 +42,7 @@ Commands:
           Delete the class header and source. Hard error if either file is
           missing (no CMake adjustments are made). Refuses if the module is
           still linked (top-level or inter-module) — unlink first with
-          `python script.py unlink --all <Folder>`. Auto-removes module
+          `python file-util.py unlink --all <Folder>`. Auto-removes module
           CMakeLists.txt + unregisters from top-level CMake + cleans empty
           directories when the last source is removed.
 
@@ -50,15 +50,15 @@ Commands:
           Rebuild module_index.json by scanning all src/*/CMakeLists.txt.
 
 Examples:
-  python script.py create Logger/Logger
-  python script.py create Logger/InternalLogging --namespace Core
-  python script.py link Logger
-  python script.py link Logger StringUtils
-  python script.py unlink Logger
-  python script.py unlink --all Logger
-  python script.py unlink Logger StringUtils
-  python script.py remove Logger/Logger
-  python script.py update-index
+  python file-util.py create Logger/Logger
+  python file-util.py create Logger/InternalLogging --namespace Core
+  python file-util.py link Logger
+  python file-util.py link Logger StringUtils
+  python file-util.py unlink Logger
+  python file-util.py unlink --all Logger
+  python file-util.py unlink Logger StringUtils
+  python file-util.py remove Logger/Logger
+  python file-util.py update-index
 """
 
 
@@ -302,7 +302,7 @@ def _create_class_files(in_rel_path: str, namespaces):
         module_cmake_path.parent.mkdir(parents=True, exist_ok=True)
         module_cmake_path.write_text(_build_module_cmake(folder, f"{class_name}.cpp"))
         print(f"created: {module_cmake_path}")
-        print(f"info: run `python script.py link {folder}` to register it in src/CMakeLists.txt")
+        print(f"info: run `python file-util.py link {folder}` to register it in src/CMakeLists.txt")
 
 
 def _link_new_module_to_module(in_module: str, in_new_module: str = None):
@@ -419,7 +419,7 @@ def _unlink_module_from_module(in_module: str, in_module_to_remove: str = None):
             print(f"error: cannot unregister '{in_module}' — it is linked from the following modules:")
             for dep in dependents:
                 print(f"  - {dep}")
-            print(f"Unlink all dependents first: `python script.py unlink --all {in_module}`")
+            print(f"Unlink all dependents first: `python file-util.py unlink --all {in_module}`")
             return
         if not top_cmake_path.exists():
             print(f"error: top-level CMakeLists.txt not found: {top_cmake_path}")
@@ -528,7 +528,7 @@ def _remove_class_files(in_rel_path: str):
             print("  linked from modules:")
             for dep in dependents:
                 print(f"    - {dep}")
-        print(f"hint: run `python script.py unlink --all {folder}` first")
+        print(f"hint: run `python file-util.py unlink --all {folder}` first")
         return False
 
     header_path.unlink()
