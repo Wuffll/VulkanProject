@@ -29,17 +29,22 @@ Commands:
           new_module to base_module's target_link_libraries (PUBLIC) and
           record the link in module_index.json under modules.
 
-  unlink  <module> | <base_module> <module_to_remove>
-          With one argument: unregister <module> from src/CMakeLists.txt's
-          INTERNAL_LIBRARIES (refuses if other modules link it). With two
-          arguments: remove module_to_remove from base_module's
-          target_link_libraries and update module_index.json.
+  unlink  [--all] <module> | <base_module> <module_to_remove>
+          With --all <module>: remove <module> from every module that
+          links it via target_link_libraries AND from top-level
+          INTERNAL_LIBRARIES (fully disconnects the module; files kept).
+          With one argument (no --all): unregister <module> from
+          src/CMakeLists.txt's INTERNAL_LIBRARIES (refuses if other modules
+          link it). With two arguments: remove module_to_remove from
+          base_module's target_link_libraries.
 
   remove  <Folder/ClassName>
-          Delete the class header and source. Refuses if the module is
-          still linked from others; type YES to auto-unlink and proceed.
-          Auto-removes module CMakeLists.txt + unregisters from top-level
-          CMake when the last source is removed.
+          Delete the class header and source. Hard error if either file is
+          missing (no CMake adjustments are made). Refuses if the module is
+          still linked (top-level or inter-module) — unlink first with
+          `python script.py unlink --all <Folder>`. Auto-removes module
+          CMakeLists.txt + unregisters from top-level CMake + cleans empty
+          directories when the last source is removed.
 
   update-index
           Rebuild module_index.json by scanning all src/*/CMakeLists.txt.
@@ -49,8 +54,9 @@ Examples:
   python script.py create Logger/InternalLogging --namespace Core
   python script.py link Logger
   python script.py link Logger StringUtils
-  python script.py unlink Logger StringUtils
   python script.py unlink Logger
+  python script.py unlink --all Logger
+  python script.py unlink Logger StringUtils
   python script.py remove Logger/Logger
   python script.py update-index
 """
@@ -198,6 +204,29 @@ def _get_cmake_target_link_libraries(cmake_path):
     return [a for a in m.group(1).split() if a not in VISIBILITY_KEYWORDS]
 
 
+def _remove_target_from_cmake(cmake_path, target_name):
+    if not cmake_path.exists():
+        return False
+    text = cmake_path.read_text()
+    pattern = re.compile(r"target_link_libraries\(\$\{LIB_NAME\}([^\n]*)\)")
+    m = pattern.search(text)
+    if not m:
+        return False
+    args = m.group(1).split()
+    if target_name not in args:
+        return False
+    args.remove(target_name)
+    if not args:
+        new_text = text.replace(m.group(0) + "\n", "", 1).replace(m.group(0), "", 1)
+    else:
+        new_args = " ".join(args)
+        new_text = pattern.sub(
+            f"target_link_libraries(${{LIB_NAME}} {new_args})", text, count=1
+        )
+    cmake_path.write_text(new_text)
+    return True
+
+
 def _parse_internal_libraries(top_cmake_path):
     if not top_cmake_path.exists():
         return []
@@ -206,6 +235,15 @@ def _parse_internal_libraries(top_cmake_path):
     if not m:
         return []
     return m.group(1).split()
+
+
+def _try_rmdir(path):
+    try:
+        path.rmdir()
+        print(f"removed: {path}")
+        return True
+    except OSError:
+        return False
 
 
 def _create_class_files(in_rel_path: str, namespaces):
@@ -223,7 +261,6 @@ def _create_class_files(in_rel_path: str, namespaces):
     header_path = root / "include" / folder / "include" / folder / f"{class_name}.h"
     source_path = root / "src" / folder / f"{class_name}.cpp"
     module_cmake_path = root / "src" / folder / "CMakeLists.txt"
-    top_cmake_path = root / "src" / "CMakeLists.txt"
 
     opening, closing = _render_namespaces(namespaces)
 
@@ -338,6 +375,39 @@ def _link_new_module_to_module(in_module: str, in_new_module: str = None):
     _save_index(index)
 
 
+def _unlink_module_from_all(in_module: str):
+    root = Path(__file__).parent.resolve()
+    top_cmake_path = root / "src" / "CMakeLists.txt"
+    index = _load_index()
+
+    dependents = _find_dependents(in_module, index)
+    for dep in dependents:
+        dep_cmake = root / "src" / dep / "CMakeLists.txt"
+        removed = _remove_target_from_cmake(dep_cmake, in_module)
+        if removed:
+            print(f"modified: {dep_cmake} (removed {in_module} from target_link_libraries)")
+        else:
+            print(f"warning: {in_module} not found in target_link_libraries of {dep_cmake}")
+        if dep in index["modules"]:
+            index["modules"][dep] = [d for d in index["modules"][dep] if d != in_module]
+
+    top_removed = False
+    if top_cmake_path.exists():
+        top_removed = _remove_from_internal_libraries(top_cmake_path, in_module)
+        if top_removed:
+            print(f"modified: {top_cmake_path} (removed {in_module} from INTERNAL_LIBRARIES)")
+            if in_module in index["top_level"]:
+                index["top_level"].remove(in_module)
+        else:
+            print(f"warning: {in_module} not in INTERNAL_LIBRARIES: {top_cmake_path}")
+
+    _save_index(index)
+
+    if not dependents and not top_removed:
+        print(f"warning: '{in_module}' was not linked anywhere")
+    print("info: module is now disconnected; run `link` to re-add, or `remove <Folder>/<ClassName>` to delete.")
+
+
 def _unlink_module_from_module(in_module: str, in_module_to_remove: str = None):
     root = Path(__file__).parent.resolve()
     top_cmake_path = root / "src" / "CMakeLists.txt"
@@ -349,7 +419,7 @@ def _unlink_module_from_module(in_module: str, in_module_to_remove: str = None):
             print(f"error: cannot unregister '{in_module}' — it is linked from the following modules:")
             for dep in dependents:
                 print(f"  - {dep}")
-            print("Unlink all dependents first (e.g. `python script.py unlink <dependent> {in_module}`).")
+            print(f"Unlink all dependents first: `python script.py unlink --all {in_module}`")
             return
         if not top_cmake_path.exists():
             print(f"error: top-level CMakeLists.txt not found: {top_cmake_path}")
@@ -384,26 +454,11 @@ def _unlink_module_from_module(in_module: str, in_module_to_remove: str = None):
             print(f"warning: {in_module_to_remove} not linked in {in_module}")
             return
 
-    text = base_cmake_path.read_text()
-    tll_pattern = re.compile(r"target_link_libraries\(\$\{LIB_NAME\}([^\n]*)\)")
-    m = tll_pattern.search(text)
-    if m:
-        args = m.group(1).split()
-        if in_module_to_remove in args:
-            args.remove(in_module_to_remove)
-            if not args:
-                new_text = text.replace(m.group(0) + "\n", "", 1).replace(m.group(0), "", 1)
-            else:
-                new_args = " ".join(args)
-                new_text = tll_pattern.sub(
-                    f"target_link_libraries(${{LIB_NAME}} {new_args})", text, count=1
-                )
-            base_cmake_path.write_text(new_text)
-            print(f"modified: {base_cmake_path} (removed {in_module_to_remove} from target_link_libraries)")
-        else:
-            print(f"warning: {in_module_to_remove} not found in target_link_libraries of {base_cmake_path}")
+    removed = _remove_target_from_cmake(base_cmake_path, in_module_to_remove)
+    if removed:
+        print(f"modified: {base_cmake_path} (removed {in_module_to_remove} from target_link_libraries)")
     else:
-        print(f"warning: no target_link_libraries line in {base_cmake_path}")
+        print(f"warning: {in_module_to_remove} not found in target_link_libraries of {base_cmake_path}")
 
     new_deps = [d for d in indexed_deps if d != in_module_to_remove]
     index["modules"][in_module] = new_deps
@@ -442,38 +497,46 @@ def _remove_class_files(in_rel_path: str):
 
     if "/" not in in_rel_path or in_rel_path.count("/") > 1:
         print("Error: input must be 'Folder/ClassName' (exactly one '/').")
-        return
+        return False
 
     folder, class_name = in_rel_path.split("/")
-    index = _load_index()
-
-    dependents = _find_dependents(folder, index)
-    if dependents:
-        print(f"error: cannot remove '{folder}' — it is linked from the following modules:")
-        for dep in dependents:
-            print(f"  - {dep}")
-        print("Unlink all dependents first, or type YES to unlink them all and proceed.")
-        choice = input("> ").strip()
-        if choice != "YES":
-            print("aborted.")
-            return
-        for dep in dependents:
-            print(f"unlinking {folder} from {dep} ...")
-            _unlink_module_from_module(dep, folder)
-        index = _load_index()
 
     header_path = root / "include" / folder / "include" / folder / f"{class_name}.h"
     source_path = root / "src" / folder / f"{class_name}.cpp"
     module_cmake_path = root / "src" / folder / "CMakeLists.txt"
     top_cmake_path = root / "src" / "CMakeLists.txt"
 
-    for path in (header_path, source_path):
-        if path.exists():
-            path.unlink()
-            print(f"removed: {path}")
-        else:
-            print(f"warning: not found, skipped: {path}")
+    missing = []
+    if not header_path.exists():
+        missing.append(str(header_path))
+    if not source_path.exists():
+        missing.append(str(source_path))
+    if missing:
+        print("error: cannot remove — file(s) not found:")
+        for m in missing:
+            print(f"  - {m}")
+        return False
 
+    index = _load_index()
+    dependents = _find_dependents(folder, index)
+    linked_top = folder in index.get("top_level", []) or folder in _parse_internal_libraries(top_cmake_path)
+    if dependents or linked_top:
+        print(f"error: cannot remove '{folder}' — it is still linked")
+        if linked_top:
+            print("  linked in top-level INTERNAL_LIBRARIES (src/CMakeLists.txt)")
+        if dependents:
+            print("  linked from modules:")
+            for dep in dependents:
+                print(f"    - {dep}")
+        print(f"hint: run `python script.py unlink --all {folder}` first")
+        return False
+
+    header_path.unlink()
+    print(f"removed: {header_path}")
+    source_path.unlink()
+    print(f"removed: {source_path}")
+
+    module_fully_removed = False
     if module_cmake_path.exists():
         remaining = _remove_from_cmake_sources(module_cmake_path, f"{class_name}.cpp")
         if remaining is False:
@@ -485,6 +548,7 @@ def _remove_class_files(in_rel_path: str):
         if remaining == []:
             module_cmake_path.unlink()
             print(f"removed: {module_cmake_path}")
+            module_fully_removed = True
             if top_cmake_path.exists():
                 removed = _remove_from_internal_libraries(top_cmake_path, folder)
                 if removed:
@@ -504,6 +568,14 @@ def _remove_class_files(in_rel_path: str):
     _save_index(index)
     if cleaned:
         print(f"info: cleaned stray references to {folder} from index")
+
+    if module_fully_removed:
+        _try_rmdir(source_path.parent)
+        _try_rmdir(header_path.parent)
+        _try_rmdir(header_path.parent.parent)
+        _try_rmdir(header_path.parent.parent.parent)
+
+    return True
 
 
 def _update_index_from_cmake():
@@ -585,6 +657,7 @@ def main():
     link_parser.add_argument("new_module", nargs="?", default=None)
 
     unlink_parser = subparsers.add_parser("unlink", add_help=False)
+    unlink_parser.add_argument("--all", action="store_true")
     unlink_parser.add_argument("base_module")
     unlink_parser.add_argument("module_to_remove", nargs="?", default=None)
 
@@ -602,14 +675,22 @@ def main():
         if args.namespace:
             namespaces.append(args.namespace)
         _create_class_files(args.path, namespaces)
+        return 0
     elif args.command == "link":
         _link_new_module_to_module(args.base_module, args.new_module)
+        return 0
     elif args.command == "unlink":
-        _unlink_module_from_module(args.base_module, args.module_to_remove)
+        if getattr(args, "all", False):
+            _unlink_module_from_all(args.base_module)
+        else:
+            _unlink_module_from_module(args.base_module, args.module_to_remove)
+        return 0
     elif args.command == "remove":
-        _remove_class_files(args.path)
+        ok = _remove_class_files(args.path)
+        return 0 if ok else 1
     elif args.command == "update-index":
         _update_index_from_cmake()
+        return 0
 
     return 0
 

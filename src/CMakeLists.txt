@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14...4.4)
 
-set(INTERNAL_LIBRARIES Logger StringUtils TestModule)
+set(INTERNAL_LIBRARIES StringUtils Logger)
 
 foreach(LIBRARY IN LISTS INTERNAL_LIBRARIES)
    add_subdirectory(${LIBRARY})
