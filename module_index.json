@@ -1,0 +1,14 @@
+{
+  "modules": {
+    "Logger": [
+      "TestModule"
+    ],
+    "StringUtils": [],
+    "TestModule": []
+  },
+  "top_level": [
+    "Logger",
+    "StringUtils",
+    "TestModule"
+  ]
+}
