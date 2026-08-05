@@ -12,4 +12,3 @@ set(SOURCES
 
 add_library(${LIB_NAME} ${SOURCES})
 target_include_directories(${LIB_NAME} PUBLIC "${LIB_INC_DIR}")
-target_link_libraries(${LIB_NAME} PUBLIC TestModule/ClassName TestModule)
