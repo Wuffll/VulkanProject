@@ -1,21 +1,21 @@
-
-#include <format>
 #include <iostream>
+#include <stdexcept>
+#include <cstdlib>
 
-#include "Logger/Logger.h"
-#include "assimp/vector3.h"
-
-std::string Vec3ToString(const aiVector3f& InVector)
-{
-    return std::format("({0}, {1}, {2})", InVector.x, InVector.y, InVector.z);
-}
+#include "AppVulkan/App.h"
 
 int main()
 {
-    const aiVector3f vector{0.0f};
+    try
+    {
+        vp::HelloTriangleApplication app;
+        app.Run();
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
 
-    std::cout << Vec3ToString(vector) << std::endl;
-    Logger::Log(LogLevel::Info, "Testing");
-
-    return 0;
+    return EXIT_SUCCESS;
 }

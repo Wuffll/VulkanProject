@@ -1,10 +1,12 @@
 {
   "modules": {
     "StringUtils": [],
-    "Logger": []
+    "Logger": [],
+    "AppVulkan": []
   },
   "top_level": [
     "StringUtils",
-    "Logger"
+    "Logger",
+    "AppVulkan"
   ]
 }
